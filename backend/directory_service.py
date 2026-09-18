@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
 
-from backend.config import DATA_DIR, STORES_FILE
+from backend.config import DATA_DIR, STORES_DIR, STORES_FILE
 
 logger = logging.getLogger("lowes_directory")
 BASE_URL = "https://www.lowes.com"
@@ -110,7 +110,7 @@ def load_states() -> list[dict[str, str]]:
 
 def load_directory_stores() -> list[dict[str, Any]]:
     restored = []
-    stores_root = DATA_DIR / "stores"
+    stores_root = STORES_DIR
     if stores_root.exists():
         for store_file in sorted(stores_root.glob("*/store.json")):
             store = _read(store_file, {})

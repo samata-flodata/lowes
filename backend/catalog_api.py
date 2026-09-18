@@ -6,14 +6,14 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
-from backend.config import DATA_DIR
+from backend.config import BASE_DIR
 from backend.store_service import validate_store_id, InvalidStoreIdError
 
 router = APIRouter()
 
 
 def root():
-    return Path(os.getenv("LOWES_OUTPUT", str(DATA_DIR))).resolve()
+    return Path(os.getenv("LOWES_OUTPUT", str(BASE_DIR))).resolve()
 
 
 def index():

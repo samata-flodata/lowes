@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .venv-local/
 .pytest_cache/
+.pytest-tmp*/
 *.log
 work/
 data/catalog.sqlite*

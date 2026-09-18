@@ -4,7 +4,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.config import GEOREFERENCE_DIR, LAYOUTS_DIR, STORES_FILE
+from backend.config import GEOREFERENCE_DIR, LAYOUTS_DIR, STORES_DIR, STORES_FILE
 from backend.main import app
 
 client = TestClient(app)
@@ -68,9 +68,7 @@ def test_get_georeference_returns_control_points():
 
 
 def test_debug_georeference_corners_round_trip():
-    from backend.config import DATA_DIR
-
-    georef_path = DATA_DIR / "stores" / "1665" / "georeference.json"
+    georef_path = STORES_DIR / "1665" / "georeference.json"
     original = georef_path.read_text(encoding="utf-8") if georef_path.exists() else None
     try:
         payload = {

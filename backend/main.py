@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from backend import directory_service, georeference, layout_service, store_service
-from backend.config import ALLOWED_ORIGINS, DATA_DIR, FRONTEND_DIR, GEOJSON_DIR, LAYOUT_IMAGES_DIR, LAYOUTS_DIR
+from backend.config import ALLOWED_ORIGINS, DATA_DIR, FRONTEND_DIR, GEOJSON_DIR, LAYOUT_IMAGES_DIR, LAYOUTS_DIR, STORES_DIR
 from backend.models import GeoreferenceFile, Transform
 from backend.store_service import InvalidStoreIdError, StoreNotFoundError
 
@@ -208,7 +208,7 @@ def api_get_map(store_id: str):
         processed = {key: json.loads(path.read_text(encoding="utf-8")) for key, path in processed_files.items()}
         return {"store": directory_entry, "anchor": {"latitude": directory_entry.get("latitude"), "longitude": directory_entry.get("longitude")}, "source_url": directory_entry.get("map_url"), "layout": processed}
 
-    processed_dir = DATA_DIR / "stores" / store_id / "processed"
+    processed_dir = STORES_DIR / store_id / "processed"
     processed_files = {
         key: processed_dir / filename
         for key, filename in {
@@ -275,8 +275,8 @@ def _debug_georeference_path(store_id: str):
     from backend.store_service import validate_store_id
 
     validate_store_id(store_id)
-    path = (DATA_DIR / "stores" / store_id / "georeference.json").resolve()
-    root = (DATA_DIR / "stores").resolve()
+    path = (STORES_DIR / store_id / "georeference.json").resolve()
+    root = STORES_DIR.resolve()
     if root not in path.parents:
         raise HTTPException(status_code=400, detail="Invalid store_id")
     return path

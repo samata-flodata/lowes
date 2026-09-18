@@ -445,7 +445,7 @@ python scripts/convert_layout.py 1665 --out converted/
 ## Tests
 
 ```bash
-pip install -r requirements.txt   # includes pytest + httpx
+pip install -r requirements-dev.txt
 pytest tests/
 ```
 
