@@ -69,6 +69,9 @@ const state = {
     stores: [],
     currentStoreId: null,
     currentStore: null,
+    targetMarker: null,
+    menardsOverlay: null,
+    menardsState: null,
 
     layers: {
         departments: null,
@@ -84,8 +87,294 @@ const state = {
         storePin: null,
         osmTile: null,
         satelliteTile: null,
+        menards: null,
     },
 };
+
+const TARGET_LOCATION = {
+    lat: 46.37224090211963,
+    lng: -94.24146083062027,
+};
+
+const MENARDS_STORAGE_KEY = "lowes-menards-overlay-v1";
+
+function getDefaultMenardsState() {
+    return {
+        visible: true,
+        offset_x: 0,
+        offset_y: 0,
+        width_meters: 125,
+        height_meters: 90,
+        scale: 1,
+        rotation: 0,
+    };
+}
+
+function loadMenardsState() {
+    try {
+        const raw = localStorage.getItem(MENARDS_STORAGE_KEY);
+        if (!raw) return getDefaultMenardsState();
+        const parsed = JSON.parse(raw);
+        return { ...getDefaultMenardsState(), ...parsed };
+    } catch (error) {
+        console.warn("Menards overlay state could not be loaded:", error);
+        return getDefaultMenardsState();
+    }
+}
+
+function saveMenardsState() {
+    if (!state.menardsState) return;
+    try {
+        localStorage.setItem(MENARDS_STORAGE_KEY, JSON.stringify(state.menardsState));
+    } catch (error) {
+        console.warn("Menards overlay state could not be saved:", error);
+    }
+}
+
+function getMenardsBounds() {
+    if (!state.menardsState) return null;
+
+    const metersPerLat = 111_320;
+    const metersPerLon = 111_320 * Math.cos(TARGET_LOCATION.lat * Math.PI / 180);
+    const centerLat = TARGET_LOCATION.lat + (state.menardsState.offset_y || 0) / metersPerLat;
+    const centerLng = TARGET_LOCATION.lng + (state.menardsState.offset_x || 0) / metersPerLon;
+    const widthMeters = (state.menardsState.width_meters || 120) * (state.menardsState.scale || 1);
+    const heightMeters = (state.menardsState.height_meters || 90) * (state.menardsState.scale || 1);
+    const halfWidthDeg = widthMeters / (2 * metersPerLon);
+    const halfHeightDeg = heightMeters / (2 * metersPerLat);
+
+    return L.latLngBounds(
+        [centerLat - halfHeightDeg, centerLng - halfWidthDeg],
+        [centerLat + halfHeightDeg, centerLng + halfWidthDeg],
+    );
+}
+
+function updateMenardsOverlayState() {
+    if (!state.map || !state.menardsOverlay || !state.menardsState) return;
+
+    const bounds = getMenardsBounds();
+    if (bounds) state.menardsOverlay.setBounds(bounds);
+
+    const svg = state.menardsOverlay.getElement();
+    if (!svg) return;
+
+    const root = svg.querySelector("svg") || svg;
+    root.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    root.style.pointerEvents = "none";
+
+    const svgWidth = 2277.64;
+    const svgHeight = 1728;
+    const cx = svgWidth / 2;
+    const cy = svgHeight / 2;
+    const rotation = Number(state.menardsState.rotation || 0);
+    const scale = Number(state.menardsState.scale || 1);
+
+    const g = svg.querySelector("g") || root;
+    g.setAttribute("transform", `rotate(${rotation} ${cx} ${cy}) scale(${scale} ${scale})`);
+}
+
+function setMenardsVisible(visible) {
+    if (!state.map || !state.menardsOverlay) return;
+    if (visible && !state.map.hasLayer(state.menardsOverlay)) state.map.addLayer(state.menardsOverlay);
+    if (!visible && state.map.hasLayer(state.menardsOverlay)) state.map.removeLayer(state.menardsOverlay);
+}
+
+function applyMenardsAdjustment(action) {
+    const stateValue = state.menardsState || getDefaultMenardsState();
+    state.menardsState = stateValue;
+    const step = Number(document.getElementById("menards-step")?.value || 5);
+
+    if (action === "north") stateValue.offset_y = Number(stateValue.offset_y || 0) + step;
+    if (action === "south") stateValue.offset_y = Number(stateValue.offset_y || 0) - step;
+    if (action === "east") stateValue.offset_x = Number(stateValue.offset_x || 0) + step;
+    if (action === "west") stateValue.offset_x = Number(stateValue.offset_x || 0) - step;
+    if (action === "width-up") stateValue.width_meters = Number(stateValue.width_meters || 120) + 5;
+    if (action === "width-down") stateValue.width_meters = Math.max(20, Number(stateValue.width_meters || 120) - 5);
+    if (action === "height-up") stateValue.height_meters = Number(stateValue.height_meters || 90) + 5;
+    if (action === "height-down") stateValue.height_meters = Math.max(20, Number(stateValue.height_meters || 90) - 5);
+    if (action === "rotate-cw") stateValue.rotation = Number(stateValue.rotation || 0) + step;
+    if (action === "rotate-ccw") stateValue.rotation = Number(stateValue.rotation || 0) - step;
+    if (action === "scale-up") stateValue.scale = Number(stateValue.scale || 1) + 0.05;
+    if (action === "scale-down") stateValue.scale = Math.max(0.25, Number(stateValue.scale || 1) - 0.05);
+    if (action === "reset") state.menardsState = getDefaultMenardsState();
+
+    updateMenardsOverlayState();
+    saveMenardsState();
+    const panel = document.getElementById("menards-status");
+    if (panel) panel.textContent = `Offset ${state.menardsState.offset_x.toFixed(0)}, ${state.menardsState.offset_y.toFixed(0)} m · scale ${state.menardsState.scale.toFixed(2)} · rotation ${state.menardsState.rotation.toFixed(0)}°`;
+}
+
+async function loadMenardsFloorPlanOverlay() {
+    if (!state.map) return;
+
+    state.menardsState = loadMenardsState();
+    const storeUrl = "https://www.menards.com/store-details/store.html?store=3065";
+
+    try {
+        let metadata = null;
+        try {
+            metadata = await fetchJSON("/api/menards/3065", { cache: "no-store" });
+        } catch (error) {
+            metadata = await fetchJSON("/api/menards/fetch", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ store_url: storeUrl, force_refresh: false }),
+                cache: "no-store",
+            });
+        }
+
+        if (!metadata || !metadata.store_id) {
+            throw new Error("Menards store metadata not available");
+        }
+
+        const svgResponse = await fetch(`/api/menards/${encodeURIComponent(metadata.store_id)}/svg`, { cache: "no-store" });
+        if (!svgResponse.ok) {
+            throw new Error(`SVG endpoint returned ${svgResponse.status}`);
+        }
+
+        const svgText = await svgResponse.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgText, "image/svg+xml");
+        const svg = doc.documentElement;
+        if (!svg || svg.nodeName.toLowerCase() !== "svg") {
+            throw new Error("Downloaded Menards SVG is invalid");
+        }
+
+        const bgPath = svg.querySelector('path[d="M0 0h2277.64v1728H0z"]');
+        if (bgPath) bgPath.remove();
+        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+        const metersPerLat = 111_320;
+        const metersPerLon = 111_320 * Math.cos((metadata.latitude || TARGET_LOCATION.lat) * Math.PI / 180);
+        const widthMeters = Number(metadata.width_meters || state.menardsState.width_meters || 125);
+        const heightMeters = Number(metadata.height_meters || state.menardsState.height_meters || 90);
+        const halfWidthDeg = widthMeters / (2 * metersPerLon);
+        const halfHeightDeg = heightMeters / (2 * metersPerLat);
+        const centerLat = Number(metadata.latitude || TARGET_LOCATION.lat);
+        const centerLng = Number(metadata.longitude || TARGET_LOCATION.lng);
+
+        const bounds = L.latLngBounds(
+            [centerLat - halfHeightDeg, centerLng - halfWidthDeg],
+            [centerLat + halfHeightDeg, centerLng + halfWidthDeg],
+        );
+
+        const overlay = L.svgOverlay(svg, bounds, {
+            opacity: 0.9,
+            interactive: false,
+            className: "menards-floorplan-overlay",
+        }).addTo(state.map);
+
+        state.map.setView([centerLat, centerLng], 18, { animate: true });
+        state.menardsOverlay = overlay;
+        state.menardsState.visible = state.menardsState.visible !== false;
+        setMenardsVisible(state.menardsState.visible);
+        updateMenardsOverlayState();
+    } catch (error) {
+        console.error("Menards floor-plan overlay could not be created:", error);
+    }
+}
+
+function setupMenardsControls() {
+    const checkbox = document.getElementById("layer-menards");
+    const status = document.getElementById("menards-status");
+    if (checkbox) {
+        checkbox.checked = true;
+        checkbox.addEventListener("change", () => {
+            if (!state.menardsState) state.menardsState = getDefaultMenardsState();
+            state.menardsState.visible = checkbox.checked;
+            setMenardsVisible(checkbox.checked);
+            saveMenardsState();
+            if (status) status.textContent = checkbox.checked ? "Menards floor plan enabled" : "Menards floor plan disabled";
+        });
+    }
+
+    document.querySelectorAll("[data-menards-action]").forEach((button) => {
+        button.addEventListener("click", () => applyMenardsAdjustment(button.dataset.menardsAction));
+    });
+
+    const saveButton = document.getElementById("save-menards-alignment");
+    if (saveButton) {
+        saveButton.addEventListener("click", () => {
+            if (!state.menardsState) state.menardsState = getDefaultMenardsState();
+            saveMenardsState();
+            if (status) status.textContent = "Menards alignment saved";
+        });
+    }
+}
+
+function createTargetMarkerIcon() {
+    return L.icon({
+        iconUrl: "./custom-target-pin.svg",
+        iconSize: [42, 42],
+        iconAnchor: [21, 41],
+        popupAnchor: [0, -38],
+        tooltipAnchor: [0, -36],
+        shadowUrl: "",
+    });
+}
+
+function addTargetMarker() {
+    if (!state.map) return;
+
+    if (state.targetMarker) {
+        state.map.removeLayer(state.targetMarker);
+        state.targetMarker = null;
+    }
+
+    const pin = L.marker([TARGET_LOCATION.lat, TARGET_LOCATION.lng], {
+        icon: createTargetMarkerIcon(),
+        title: "Target location",
+        keyboard: true,
+    }).addTo(state.map);
+
+    pin.bindPopup(`<strong>Target location</strong><br>${TARGET_LOCATION.lat}, ${TARGET_LOCATION.lng}`);
+    pin.bindTooltip("Target location", { direction: "top", offset: [0, -18] });
+
+    state.targetMarker = pin;
+    state.map.setView([TARGET_LOCATION.lat, TARGET_LOCATION.lng], 18, { animate: true });
+    return pin;
+}
+
+function applyPanelCollapseState(panelId, collapsed) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    panel.classList.toggle('collapsed', collapsed);
+    const button = panel.querySelector('.panel-toggle');
+    if (button) {
+        button.textContent = collapsed ? '+' : '−';
+        button.setAttribute('aria-label', collapsed ? `Expand ${panelId} panel` : `Collapse ${panelId} panel`);
+        button.setAttribute('aria-expanded', String(!collapsed));
+    }
+    try {
+        sessionStorage.setItem(`map-panel:${panelId}:collapsed`, String(collapsed));
+    } catch (error) {
+        console.warn('Could not save panel collapse state:', error);
+    }
+}
+
+function wireCollapsiblePanels() {
+    document.querySelectorAll('.panel-toggle').forEach((button) => {
+        const panelId = button.dataset.panel;
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+
+        let collapsed = false;
+        try {
+            collapsed = sessionStorage.getItem(`map-panel:${panelId}:collapsed`) === 'true';
+        } catch (error) {
+            console.warn('Could not read panel collapse state:', error);
+        }
+        applyPanelCollapseState(panelId, collapsed);
+
+        button.addEventListener('click', () => {
+            const nextCollapsed = !panel.classList.contains('collapsed');
+            applyPanelCollapseState(panelId, nextCollapsed);
+            if (state.map) {
+                window.setTimeout(() => state.map.invalidateSize(), 50);
+            }
+        });
+    });
+}
 
 /* ---------------------------------------------------------------------- */
 /* Map bootstrap                                                          */
@@ -124,6 +413,7 @@ function initMap() {
     state.layers.rackLabels = L.layerGroup().addTo(map);
     state.layers.markers = [];
     state.layers.markerGroup = L.layerGroup().addTo(map);
+    state.layers.menards = L.layerGroup();
 
     map.on("zoomend", updateZoomVisibility);
     state.map = map;
@@ -392,9 +682,21 @@ function wireLayerControls() {
 document.addEventListener("DOMContentLoaded", async () => {
     initMap();
     wireLayerControls();
+    wireCollapsiblePanels();
+    setupMenardsControls();
     try {
         await loadStores();
     } catch (err) {
         console.error("Failed to load stores:", err);
+    }
+
+    addTargetMarker();
+    await loadMenardsFloorPlanOverlay();
+    const checkbox = document.getElementById("layer-menards");
+    if (checkbox && state.menardsState) checkbox.checked = state.menardsState.visible !== false;
+    setMenardsVisible(checkbox ? checkbox.checked : true);
+    if (state.menardsState) {
+        const status = document.getElementById("menards-status");
+        if (status) status.textContent = `Menards floor plan enabled · ${state.menardsState.width_meters}m x ${state.menardsState.height_meters}m`;
     }
 });

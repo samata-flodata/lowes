@@ -13,14 +13,17 @@ import os
 import tempfile
 import subprocess
 import sys
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from backend import directory_service, georeference, layout_service, store_service
+from backend.menards_service import fetch_menards_locator_stores, fetch_menards_store, get_cached_menards_store
 from backend.config import ALLOWED_ORIGINS, DATA_DIR, FRONTEND_DIR, GEOJSON_DIR, LAYOUT_IMAGES_DIR, LAYOUTS_DIR, STORES_DIR
 from backend.models import GeoreferenceFile, Transform
 from backend.store_service import InvalidStoreIdError, StoreNotFoundError
@@ -248,6 +251,11 @@ def api_get_map(store_id: str):
 # ---------------------------------------------------------------------------
 # Calibration
 # ---------------------------------------------------------------------------
+
+class MenardsFetchRequest(BaseModel):
+    store_url: str = Field(..., description="Menards store URL, such as https://www.menards.com/store-details/store.html?store=3065")
+    force_refresh: bool = False
+
 
 class CalibrationUpdate(BaseModel):
     anchor_latitude: float
@@ -607,6 +615,55 @@ def api_get_floorplan(store_id: str):
         )
 
     return result
+
+
+@app.get("/api/menards/stores")
+def api_get_menards_stores(force_refresh: bool = False):
+    try:
+        return fetch_menards_locator_stores(force_refresh=force_refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/menards/stores/refresh")
+def api_refresh_menards_stores():
+    try:
+        return fetch_menards_locator_stores(force_refresh=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/menards/fetch")
+def api_fetch_menards_store(payload: MenardsFetchRequest):
+    try:
+        return fetch_menards_store(payload.store_url, force_refresh=payload.force_refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/menards/{store_id}")
+def api_get_menards_metadata(store_id: str):
+    metadata = get_cached_menards_store(store_id)
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="Menards store metadata not found")
+    return metadata
+
+
+@app.get("/api/menards/{store_id}/svg")
+def api_get_menards_svg(store_id: str):
+    metadata = get_cached_menards_store(store_id)
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="Menards store metadata not found")
+    svg_path = Path(metadata.get("svg_path", ""))
+    if not svg_path.exists() or not svg_path.is_file():
+        raise HTTPException(status_code=404, detail="Menards SVG file not found")
+    return FileResponse(svg_path, media_type="image/svg+xml", filename=svg_path.name)
 
 
 # ---------------------------------------------------------------------------

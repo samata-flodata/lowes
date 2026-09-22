@@ -9,7 +9,7 @@
         rel="stylesheet"
         href="vendor/leaflet/leaflet.css"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=panel-collapse-1" />
 </head>
 <body>
     <div id="topbar">
@@ -19,6 +19,15 @@
 
     <aside id="directory" aria-label="Store directory">
         <h1>Find a store</h1>
+        <label for="menards-url">Menards store URL</label>
+        <input id="menards-url" type="url" value="https://www.menards.com/store-details/store.html?store=3065" placeholder="https://www.menards.com/store-details/store.html?store=3065" />
+        <button id="load-menards-store">Load Menards Store</button>
+        <p id="menards-load-status" role="status">Ready</p>
+        <label for="provider-select">Provider</label>
+        <select id="provider-select">
+            <option value="lowes">Lowe's</option>
+            <option value="menards">Menards</option>
+        </select>
         <label for="store-search">Search name, ID, city or ZIP</label>
         <input id="store-search" type="search" placeholder="Search stores…" />
         <label for="state-filter">State</label><select id="state-filter"><option value="">All states</option></select>
@@ -29,22 +38,55 @@
         <button id="more-stores" hidden>Show more stores</button>
     </aside>
 
-    <section id="selection-info" aria-live="polite">
-        <strong id="selected-name">Select a store</strong>
-        <div id="selected-address"></div>
-        <div id="map-status"></div>
-        <button id="view-location" hidden>Store location</button>
-        <button id="view-indoor" hidden>Indoor map</button>
+    <section id="selection-info" class="collapsible-panel" aria-live="polite">
+        <div class="panel-header">
+            <div class="panel-title">Selected Store</div>
+            <button type="button" class="panel-toggle" data-panel="selection-info" aria-label="Toggle selected store panel">−</button>
+        </div>
+        <div class="panel-body">
+            <strong id="selected-name">Select a store</strong>
+            <div id="selected-address"></div>
+            <div id="map-status"></div>
+            <button id="view-location" hidden>Store location</button>
+            <button id="view-indoor" hidden>Indoor map</button>
+        </div>
     </section>
 
     <div id="map"></div>
 
-    <div id="layer-panel">
-        <h3>Layers</h3>
-        <label class="layer-row"><input type="checkbox" id="layer-satellite" checked /> Satellite basemap</label>
-        <label class="layer-row"><input type="checkbox" id="layer-aisle" checked /> Lowes_aisle</label>
-        <label class="layer-row"><input type="checkbox" id="layer-rack" checked /> Lowes_rack</label>
-        <label class="layer-row"><input type="checkbox" id="layer-department" checked /> Lowes_depertment</label>
+    <div id="layer-panel" class="collapsible-panel">
+        <div class="panel-header">
+            <h3 class="panel-title">Layers</h3>
+            <button type="button" class="panel-toggle" data-panel="layer-panel" aria-label="Toggle layers panel">−</button>
+        </div>
+        <div class="panel-body">
+            <label class="layer-row"><input type="checkbox" id="layer-satellite" checked /> Satellite basemap</label>
+            <label class="layer-row"><input type="checkbox" id="layer-aisle" checked /> Lowes_aisle</label>
+            <label class="layer-row"><input type="checkbox" id="layer-rack" checked /> Lowes_rack</label>
+            <label class="layer-row"><input type="checkbox" id="layer-department" checked /> Lowes_depertment</label>
+            <label class="layer-row"><input type="checkbox" id="layer-menards" checked /> Menards Indoor Map</label>
+        </div>
+    </div>
+
+    <div id="menards-panel">
+        <h3>Menards alignment</h3>
+        <div class="debug-grid">
+            <button data-menards-action="north">Move North</button>
+            <button data-menards-action="south">Move South</button>
+            <button data-menards-action="west">Move West</button>
+            <button data-menards-action="east">Move East</button>
+            <button data-menards-action="width-up">Increase width</button>
+            <button data-menards-action="width-down">Decrease width</button>
+            <button data-menards-action="height-up">Increase height</button>
+            <button data-menards-action="height-down">Decrease height</button>
+            <button data-menards-action="rotate-cw">Rotate CW</button>
+            <button data-menards-action="rotate-ccw">Rotate CCW</button>
+            <button data-menards-action="scale-up">Scale up</button>
+            <button data-menards-action="scale-down">Scale down</button>
+        </div>
+        <label>Step size <select id="menards-step"><option value="1">Small</option><option value="5" selected>Medium</option><option value="20">Large</option></select></label>
+        <div id="menards-status">Menards floor plan enabled</div>
+        <div class="debug-actions"><button data-menards-action="reset">Reset</button><button id="save-menards-alignment">Save Alignment</button></div>
     </div>
 
     <div id="debug-panel" hidden>
@@ -69,7 +111,7 @@
     <script
         src="vendor/leaflet/leaflet.js"
     ></script>
-    <script src="app.js?v=debug-georef-5"></script>
-    <script src="directory.js?v=debug-georef-8"></script>
+    <script src="app.js?v=panel-collapse-1"></script>
+    <script src="directory.js?v=panel-collapse-1"></script>
 </body>
 </html>

@@ -227,6 +227,127 @@ function matchingStores() {
         && [s.name, s.store_id, s.city, s.state, s.zip, s.address].join(' ').toLowerCase().includes(query));
 }
 
+function renderMenardsMarkers(stores) {
+    if (!state.map) return;
+
+    const menardsLayer = state.layers.menards || (state.layers.menards = L.layerGroup());
+    const filteredMenardsStores = Array.isArray(stores) ? stores.filter((store) => {
+        const stateValue = document.getElementById('state-filter')?.value || '';
+        const cityValue = document.getElementById('city-filter')?.value || '';
+        const matchesState = !stateValue || (store.state_code || store.state) === stateValue;
+        const matchesCity = !cityValue || (store.city || '').toLowerCase() === cityValue.toLowerCase();
+        return matchesState && matchesCity;
+    }) : [];
+
+    if (!state.map.hasLayer(menardsLayer)) {
+        menardsLayer.addTo(state.map);
+    }
+
+    menardsLayer.clearLayers();
+    const bounds = [];
+    let validCount = 0;
+    let invalidCount = 0;
+
+    console.log('Menards stores:', stores.length);
+    console.log('Filtered stores:', filteredMenardsStores.length);
+
+    filteredMenardsStores.forEach((store) => {
+        const lat = Number(store.latitude);
+        const lng = Number(store.longitude);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            invalidCount += 1;
+            console.warn('Invalid Menards coordinate:', store);
+            return;
+        }
+
+        validCount += 1;
+        bounds.push([lat, lng]);
+
+        const marker = L.marker([lat, lng]).bindPopup(`
+            <strong>${store.name || `Menards #${store.store_id}`}</strong><br>
+            #${store.store_id}<br>
+            ${store.street || ''}${store.street ? '<br>' : ''}${store.city || ''}, ${store.state || ''} ${store.zip || ''}
+        `);
+        marker.addTo(menardsLayer);
+    });
+
+    const checkbox = document.getElementById('layer-menards');
+    if (checkbox && !checkbox.checked) {
+        checkbox.checked = true;
+    }
+    if (!state.map.hasLayer(menardsLayer)) {
+        menardsLayer.addTo(state.map);
+    }
+
+    if (bounds.length > 0) {
+        const layerBounds = L.latLngBounds(bounds);
+        state.map.fitBounds(layerBounds, { padding: [30, 30], maxZoom: 7 });
+    }
+
+    console.log('Markers in layer:', menardsLayer.getLayers().length);
+    console.log('Layer visible:', state.map.hasLayer(menardsLayer));
+    console.log('Menards valid markers:', validCount);
+    console.log('Menards invalid coordinates:', invalidCount);
+}
+
+function renderMenardsPins(stores) {
+    renderMenardsMarkers(stores);
+}
+
+async function loadMenardsStores() {
+    try {
+        const response = await fetchJSON('/api/menards/stores', { cache: 'no-store' });
+        const records = Array.isArray(response) ? response : (Array.isArray(response.stores) ? response.stores : []);
+
+        console.log('Menards stores received:', records.length);
+        console.log('First Menards store:', records[0]);
+
+        const normalized = records.map((store) => ({
+            store_id: String(store.store_id || store.storeNumber || ''),
+            name: store.name || store.storeName || `Menards #${store.store_id || store.storeNumber || ''}`,
+            street: store.street || store.address || '',
+            city: store.city || '',
+            state: store.state || '',
+            state_code: store.state || '',
+            zip: store.zip || '',
+            latitude: Number(store.latitude),
+            longitude: Number(store.longitude),
+            address: [store.street || store.address || '', store.city || '', store.state || '', store.zip || ''].filter(Boolean).join(', '),
+            detail_url: store.detail_url || `https://www.menards.com/store-details/store.html?store=${store.store_id || store.storeNumber || ''}`,
+            provider: 'menards',
+            source: 'menards',
+        })).filter(store => String(store.store_id).trim() && Number.isFinite(store.latitude) && Number.isFinite(store.longitude));
+
+        state.stores = normalized;
+        const stateOptions = [...new Set(normalized.map(store => store.state_code || store.state).filter(Boolean))].sort();
+        const cityOptions = [...new Set(normalized.map(store => store.city).filter(Boolean))].sort();
+        const stateSelect = el('state-filter');
+        stateSelect.replaceChildren(new Option('All states', ''));
+        stateOptions.forEach(value => stateSelect.add(new Option(value, value)));
+        const citySelect = el('city-filter');
+        citySelect.replaceChildren(new Option('All cities', ''));
+        cityOptions.forEach(value => citySelect.add(new Option(value, value)));
+
+        renderMenardsMarkers(normalized);
+        if (normalized.length >= 100) {
+            applyPanelCollapseState('selection-info', true);
+        }
+        renderDirectory();
+        const status = document.getElementById('menards-load-status');
+        if (status) status.textContent = `Loaded ${normalized.length} Menards stores`;
+        setTimeout(() => {
+            if (state.map) state.map.invalidateSize();
+        }, 100);
+        return normalized;
+    } catch (error) {
+        console.error('Menards store loading failed:', error);
+        const status = document.getElementById('menards-load-status');
+        if (status) status.textContent = error.message || 'Menards load failed';
+        return [];
+    }
+}
+
 function renderDirectory() {
     const stores = matchingStores();
     el('result-count').textContent = `${stores.length.toLocaleString()} stores`;
@@ -428,6 +549,92 @@ function renderAlignedMap(store, sourceData, fitViewport = true) {
 }
 
 // The boot handler in app.js resolves these functions after this script loads.
+function setMenardsLoadStatus(message) {
+    const statusNode = document.getElementById('menards-load-status');
+    if (statusNode) statusNode.textContent = message;
+}
+
+async function loadMenardsStoreFromUrl(url) {
+    const normalized = (url || '').trim();
+    if (!normalized) {
+        setMenardsLoadStatus('Enter a Menards store URL');
+        return;
+    }
+    setMenardsLoadStatus('Loading Menards store...');
+    try {
+        const payload = await fetchJSON('/api/menards/fetch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ store_url: normalized, force_refresh: false }),
+            cache: 'no-store',
+        });
+        setMenardsLoadStatus('Getting address...');
+        const record = {
+            store_id: String(payload.store_id),
+            name: payload.name || `Menards #${payload.store_id}`,
+            address: payload.address,
+            city: payload.city || payload.address.split(',')[1]?.trim() || 'Sioux City',
+            state: payload.state || 'IA',
+            state_code: payload.state_code || 'IA',
+            latitude: Number(payload.latitude),
+            longitude: Number(payload.longitude),
+            store_url: payload.store_url || normalized,
+            indoor_map_status: 'success',
+            map_status: 'ready',
+            map_file: payload.svg_path,
+            svg_url: payload.svg_url,
+            menards: true,
+            source: 'menards',
+        };
+        const existingIndex = state.stores.findIndex(item => String(item.store_id) === String(record.store_id));
+        if (existingIndex >= 0) state.stores[existingIndex] = { ...state.stores[existingIndex], ...record };
+        else state.stores.unshift(record);
+        setMenardsLoadStatus('Getting indoor map...');
+        setTimeout(() => setMenardsLoadStatus('Geocoding location...'), 250);
+        renderDirectory();
+        if (Number.isFinite(record.latitude) && Number.isFinite(record.longitude)) {
+            directory.location = [record.latitude, record.longitude];
+            state.map.setView(directory.location, 18, { animate: true });
+            if (state.layers.storePin) { state.map.removeLayer(state.layers.storePin); }
+            const popup = document.createElement('div');
+            popup.innerHTML = `<strong>Sioux City Menards #${record.store_id}</strong><br>${record.address}`;
+            state.layers.storePin = L.marker(directory.location).addTo(state.map).bindPopup(popup);
+        }
+        const svgResponse = await fetch(`/api/menards/${encodeURIComponent(record.store_id)}/svg`, { cache: 'no-store' });
+        if (!svgResponse.ok) throw new Error(`SVG fetch failed: ${svgResponse.status}`);
+        const svgText = await svgResponse.text();
+        const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+        const svg = doc.documentElement;
+        if (!svg || svg.nodeName.toLowerCase() !== 'svg') throw new Error('Invalid Menards SVG document');
+        const bounds = L.latLngBounds([
+            [record.latitude - 0.001, record.longitude - 0.001],
+            [record.latitude + 0.001, record.longitude + 0.001],
+        ]);
+        if (state.menardsOverlay) state.map.removeLayer(state.menardsOverlay);
+        state.menardsOverlay = L.svgOverlay(svg, bounds, {
+            opacity: 0.9,
+            interactive: false,
+            className: 'menards-floorplan-overlay',
+        }).addTo(state.map);
+        state.menardsState = { visible: true, offset_x: 0, offset_y: 0, width_meters: 180, height_meters: 150, scale: 1, rotation: 0 };
+        const status = document.getElementById('menards-status');
+        if (status) status.textContent = `Menards floor plan enabled · ${state.menardsState.width_meters}m x ${state.menardsState.height_meters}m`;
+        const checkbox = document.getElementById('layer-menards');
+        if (checkbox) checkbox.checked = true;
+        setMenardsLoadStatus('Ready');
+        const selected = document.getElementById('selected-name');
+        const selectedAddress = document.getElementById('selected-address');
+        if (selected) selected.textContent = `${record.name} · #${record.store_id}`;
+        if (selectedAddress) selectedAddress.textContent = record.address;
+        state.currentStoreId = record.store_id;
+        state.currentStore = record;
+        renderDirectory();
+    } catch (error) {
+        console.error('Menards store load failed:', error);
+        setMenardsLoadStatus(error.message || 'Menards load failed');
+    }
+}
+
 async function loadStores() {
     setupDebugPanel();
     let states = null;
@@ -449,7 +656,10 @@ async function loadStores() {
         [...new Map(state.stores.map(s => [s.state_code || s.state, s.state || s.state_code])).entries()]
             .sort((a, b) => a[1].localeCompare(b[1])).forEach(([code, name]) => stateSelect.add(new Option(name, code)));
     }
+    stateSelect.value = '';
     options('city-filter', state.stores.map(s => s.city));
+    const citySelect = el('city-filter');
+    if (citySelect) citySelect.value = '';
     el('store-search').addEventListener('input', () => { directory.limit = 100; renderDirectory(); });
     el('state-filter').addEventListener('change', async () => {
         const code = el('state-filter').value;
@@ -474,6 +684,51 @@ async function loadStores() {
         el('catalog-status').textContent = report.discovery_error ? 'Nationwide discovery is incomplete. Showing saved stores.' : response.message || '';
     } catch (error) { console.warn(error); }
     if (state.stores.length) await loadStore(state.stores[0].store_id);
+
+    const providerSelect = document.getElementById('provider-select');
+    if (providerSelect) {
+        providerSelect.addEventListener('change', async () => {
+            if (providerSelect.value === 'menards') {
+                if (!state.layers.menards) {
+                    state.layers.menards = L.layerGroup();
+                }
+                const checkbox = document.getElementById('layer-menards');
+                if (checkbox) checkbox.checked = true;
+                const stateSelect = el('state-filter');
+                stateSelect.value = '';
+                const citySelect = el('city-filter');
+                if (citySelect) citySelect.value = '';
+                const normalized = await loadMenardsStores();
+                renderMenardsMarkers(normalized || state.stores || []);
+                if (state.layers.menards && !state.map.hasLayer(state.layers.menards)) {
+                    state.layers.menards.addTo(state.map);
+                }
+                if (state.map) state.map.invalidateSize();
+            } else {
+                if (state.layers.menards && state.map.hasLayer(state.layers.menards)) {
+                    state.map.removeLayer(state.layers.menards);
+                }
+                const stateSelect = el('state-filter');
+                stateSelect.replaceChildren(new Option('All states', ''));
+                [...new Map(state.stores.map(s => [s.state_code || s.state, s.state || s.state_code])).entries()]
+                    .sort((a, b) => a[1].localeCompare(b[1])).forEach(([code, name]) => stateSelect.add(new Option(name, code)));
+                stateSelect.value = '';
+                options('city-filter', state.stores.map(s => s.city));
+                const citySelect = el('city-filter');
+                if (citySelect) citySelect.value = '';
+                renderDirectory();
+                if (state.stores.length) await loadStore(state.stores[0].store_id);
+            }
+        });
+    }
+
+    const menardsButton = document.getElementById('load-menards-store');
+    if (menardsButton) {
+        menardsButton.addEventListener('click', async () => {
+            const url = document.getElementById('menards-url')?.value || '';
+            await loadMenardsStoreFromUrl(url);
+        });
+    }
 };
 
 async function loadStore(storeId) {
