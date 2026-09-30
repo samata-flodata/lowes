@@ -71,6 +71,8 @@ const state = {
     currentStore: null,
     targetMarker: null,
     menardsOverlay: null,
+    menardsOverlays: {},
+    menardsActiveStoreId: null,
     menardsState: null,
 
     layers: {
@@ -131,6 +133,17 @@ function saveMenardsState() {
     }
 }
 
+function activateMenardsOverlayForStore(storeId, overlay) {
+    if (!storeId) return;
+    const previousId = state.menardsActiveStoreId;
+    if (previousId && previousId !== storeId && state.menardsOverlays[previousId] && state.map && state.map.hasLayer(state.menardsOverlays[previousId])) {
+        state.map.removeLayer(state.menardsOverlays[previousId]);
+    }
+    state.menardsOverlays[storeId] = overlay || state.menardsOverlays[storeId] || null;
+    state.menardsActiveStoreId = storeId;
+    state.menardsOverlay = overlay || state.menardsOverlays[storeId] || null;
+}
+
 function getMenardsBounds() {
     if (!state.menardsState) return null;
 
@@ -174,9 +187,10 @@ function updateMenardsOverlayState() {
 }
 
 function setMenardsVisible(visible) {
-    if (!state.map || !state.menardsOverlay) return;
-    if (visible && !state.map.hasLayer(state.menardsOverlay)) state.map.addLayer(state.menardsOverlay);
-    if (!visible && state.map.hasLayer(state.menardsOverlay)) state.map.removeLayer(state.menardsOverlay);
+    const overlay = state.menardsActiveStoreId ? state.menardsOverlays[state.menardsActiveStoreId] || state.menardsOverlay : state.menardsOverlay;
+    if (!state.map || !overlay) return;
+    if (visible && !state.map.hasLayer(overlay)) state.map.addLayer(overlay);
+    if (!visible && state.map.hasLayer(overlay)) state.map.removeLayer(overlay);
 }
 
 function applyMenardsAdjustment(action) {
@@ -266,6 +280,8 @@ async function loadMenardsFloorPlanOverlay() {
 
         state.map.setView([centerLat, centerLng], 18, { animate: true });
         state.menardsOverlay = overlay;
+        state.menardsOverlays[metadata.store_id] = overlay;
+        state.menardsActiveStoreId = metadata.store_id;
         state.menardsState.visible = state.menardsState.visible !== false;
         setMenardsVisible(state.menardsState.visible);
         updateMenardsOverlayState();

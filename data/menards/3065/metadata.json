@@ -1,0 +1,19 @@
+{
+  "store_id": "3065",
+  "store_url": "https://www.menards.com/store-details/store.html?store=3065",
+  "svg_url": "https://www.menards.com/main/assets/storemap/P4CEMTYPICAL(MADIX300)-649.svg",
+  "svg_path": "C:\\Users\\Flodata Analytics\\lowes\\data\\menards\\3065\\floor1.svg",
+  "local_svg": "C:\\Users\\Flodata Analytics\\lowes\\data\\menards\\3065\\floor1.svg",
+  "svg_size": 423592,
+  "viewBox": "0 0 2277.64 1728",
+  "status": "ready",
+  "indoor_map": "ready",
+  "location": "ready",
+  "name": "SIOUX CITY",
+  "address": "5900 GORDON DR, SIOUX CITY, IA 51106",
+  "city": "SIOUX CITY",
+  "state": "IA",
+  "state_code": "IA",
+  "latitude": 42.474174,
+  "longitude": -96.33196
+}

@@ -99,3 +99,58 @@ def test_fetch_menards_locator_stores_ignores_stale_singleton_cache(monkeypatch,
     assert payload["count"] == 120
     assert payload["stores"][0]["store_id"] == "0"
     assert payload["stores"][-1]["store_id"] == "119"
+
+
+def test_fetch_all_menards_indoor_maps_skips_cached_and_marks_unavailable(tmp_path, monkeypatch):
+    data_dir = tmp_path / "menards"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    cached_svg = data_dir / "1001" / "floor1.svg"
+    cached_svg.parent.mkdir(parents=True, exist_ok=True)
+    cached_svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>', encoding="utf-8")
+    (data_dir / "1001" / "metadata.json").write_text(json.dumps({
+        "store_id": "1001",
+        "status": "available",
+        "svg_url": "https://example.test/1001.svg",
+        "svg_path": str(cached_svg),
+    }), encoding="utf-8")
+
+    monkeypatch.setattr(menards_service, "MENARDS_DIR", data_dir)
+
+    def fake_fetch_locator(force_refresh=False):
+        return {
+            "provider": "menards",
+            "stores": [
+                {"store_id": "1001"},
+                {"store_id": "1002"},
+                {"store_id": "1003"},
+            ],
+            "count": 3,
+            "status": "ready",
+        }
+
+    def fake_discover(store_id, force_refresh=False):
+        if store_id == "1002":
+            svg_path = data_dir / store_id / "floor1.svg"
+            svg_path.parent.mkdir(parents=True, exist_ok=True)
+            svg_path.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>', encoding="utf-8")
+            return {
+                "store_id": str(store_id),
+                "status": "available",
+                "svg_url": "https://example.test/1002.svg",
+                "svg_path": str(svg_path),
+                "local_file": str(svg_path),
+            }
+        raise ValueError(f"No SVG request was discovered for Menards store {store_id}")
+
+    monkeypatch.setattr(menards_service, "fetch_menards_locator_stores", fake_fetch_locator)
+    monkeypatch.setattr(menards_service, "discover_menards_svg_for_store", fake_discover)
+
+    summary = menards_service.fetch_all_menards_indoor_maps(store_ids=["1001", "1002", "1003"], force_refresh=False, concurrency=1, delay=0)
+
+    assert summary["total_stores"] == 3
+    assert summary["skipped_existing"] == 1
+    assert summary["available"] == 1
+    assert summary["unavailable"] == 1
+    assert summary["failed"] == 0
+    assert summary["failed_store_ids"] == []
+    assert summary["unavailable_store_ids"] == ["1003"]

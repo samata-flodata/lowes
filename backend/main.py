@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from backend import directory_service, georeference, layout_service, store_service
-from backend.menards_service import fetch_menards_locator_stores, fetch_menards_store, get_cached_menards_store
+from backend.menards_service import discover_menards_svg_for_store, fetch_all_menards_indoor_maps, fetch_menards_locator_stores, fetch_menards_store, get_cached_menards_store
 from backend.config import ALLOWED_ORIGINS, DATA_DIR, FRONTEND_DIR, GEOJSON_DIR, LAYOUT_IMAGES_DIR, LAYOUTS_DIR, STORES_DIR
 from backend.models import GeoreferenceFile, Transform
 from backend.store_service import InvalidStoreIdError, StoreNotFoundError
@@ -641,6 +641,42 @@ def api_refresh_menards_stores():
 def api_fetch_menards_store(payload: MenardsFetchRequest):
     try:
         return fetch_menards_store(payload.store_url, force_refresh=payload.force_refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/menards/stores/{store_id}/indoor-map")
+def api_get_menards_indoor_map(store_id: str, force_refresh: bool = False):
+    try:
+        return discover_menards_svg_for_store(store_id, force_refresh=force_refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/menards/stores/{store_id}/indoor-map/refresh")
+def api_refresh_menards_indoor_map(store_id: str):
+    try:
+        return discover_menards_svg_for_store(store_id, force_refresh=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/menards/stores/indoor-maps/fetch-all")
+def api_fetch_all_menards_indoor_maps(payload: MenardsBatchFetchRequest):
+    try:
+        store_ids = list(payload.store_ids) if payload.store_ids else None
+        return fetch_all_menards_indoor_maps(
+            store_ids=store_ids,
+            force_refresh=payload.force_refresh,
+            concurrency=payload.concurrency,
+            delay=payload.delay,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

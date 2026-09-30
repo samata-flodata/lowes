@@ -9,7 +9,7 @@
         rel="stylesheet"
         href="vendor/leaflet/leaflet.css"
     />
-    <link rel="stylesheet" href="styles.css?v=panel-collapse-1" />
+    <link rel="stylesheet" href="styles.css?v=menards-svg-on-demand-1" />
 </head>
 <body>
     <div id="topbar">
@@ -28,6 +28,8 @@
             <option value="lowes">Lowe's</option>
             <option value="menards">Menards</option>
         </select>
+        <button id="fetch-all-menards-maps" type="button">Fetch All Menards Indoor Maps</button>
+        <p id="menards-batch-status" role="status">Idle</p>
         <label for="store-search">Search name, ID, city or ZIP</label>
         <input id="store-search" type="search" placeholder="Search stores…" />
         <label for="state-filter">State</label><select id="state-filter"><option value="">All states</option></select>
@@ -111,7 +113,7 @@
     <script
         src="vendor/leaflet/leaflet.js"
     ></script>
-    <script src="app.js?v=panel-collapse-1"></script>
-    <script src="directory.js?v=panel-collapse-1"></script>
+    <script src="app.js?v=menards-svg-on-demand-1"></script>
+    <script src="directory.js?v=menards-svg-on-demand-1"></script>
 </body>
 </html>
